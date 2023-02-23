@@ -10,23 +10,22 @@ import io.ktor.server.plugins.autohead.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tokyo.isseikuzumaki.devicediscoverylib.server.Protocol
 import tokyo.isseikuzumaki.devicediscoverylib.server.ProtocolEventListener
 import java.io.File
-import java.net.Inet4Address
-import java.net.NetworkInterface
-import java.net.SocketException
 
-class Http(port: Int, cacheDir: File) : Protocol {
+class Http(override val host: String, override val port: Int, cacheDir: File) : Protocol {
     override val scheme = "http"
     private val engine: ApplicationEngine
     private var listener: ProtocolEventListener? = null
     private val eventDispatcher = Dispatchers.IO
 
     init {
-        engine = embeddedServer(Netty, port = port) {
+        engine = embeddedServer(Netty, port = port, host = host) {
             install(AutoHeadResponse)
             routing {
                 get {
@@ -85,17 +84,18 @@ class Http(port: Int, cacheDir: File) : Protocol {
     override fun start(listener: ProtocolEventListener?) {
         this.listener = listener
         engine.start()
+        CoroutineScope(eventDispatcher).launch {
+            engine.resolvedConnectors().firstOrNull { it.type == ConnectorType.HTTP }?.let {
+                val uri = Uri.parse("http://${it.host}:${it.port}")
+                listener?.onProtocolEstablished(uri)
+            }
+        }
     }
 
     override fun stop() {
         engine.stop()
         this.listener = null
     }
-
-
-
-
-
 
 
 }

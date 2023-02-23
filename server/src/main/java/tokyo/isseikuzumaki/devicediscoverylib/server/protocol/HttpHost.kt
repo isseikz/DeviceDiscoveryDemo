@@ -8,16 +8,21 @@ import tokyo.isseikuzumaki.devicediscoverylib.server.Protocol
 import tokyo.isseikuzumaki.devicediscoverylib.server.ProtocolEventListener
 import java.io.File
 
-class HttpHost(port: Int, rootDir: File, default: String? = null): Protocol {
+class HttpHost(
+    override val host: String,
+    override val port: Int,
+    rootDir: File,
+    default: String? = null
+) : Protocol {
     override val scheme = "http"
     private val engine: ApplicationEngine
     private var listener: ProtocolEventListener? = null
 
     init {
-        engine = embeddedServer(Netty, port = port) {
+        engine = embeddedServer(Netty, host = host, port = port) {
             routing {
                 static("/") {
-                    staticRootFolder =  rootDir
+                    staticRootFolder = rootDir
                     default(default ?: "index.html")
                     files(".")
                 }

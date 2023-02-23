@@ -1,14 +1,16 @@
 package tokyo.isseikuzumaki.devicediscoverylib.server
 
 import android.content.Context
-import android.os.Bundle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import tokyo.isseikuzumaki.devicediscoverylib.server.protocol.Http
 import tokyo.isseikuzumaki.devicediscoverylib.server.protocol.HttpHost
 import tokyo.isseikuzumaki.devicediscoverylib.server.servicediscovery.NetworkServiceDiscovery
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.ServerSocket
+import java.net.SocketException
 
 class Server(
     private val serviceDiscovery: ServiceDiscovery,
@@ -38,25 +40,54 @@ class Server(
         lateinit var discoveryMethod: ServiceDiscoveryMethod
         lateinit var transportPort: TransportPort
         var protocolEventListener: ProtocolEventListener? = null
-        var extras: Bundle? = null
         fun build(context: Context): Server {
-            val serviceDiscovery = when(discoveryMethod) {
+            val serviceDiscovery = when (discoveryMethod) {
                 ServiceDiscoveryMethod.DNS_SERVICE_DISCOVERY -> {
-                    NetworkServiceDiscovery.build(context, name, transportProtocol, transportLayer, transportPort)
+                    NetworkServiceDiscovery.build(
+                        context,
+                        name,
+                        transportProtocol,
+                        transportLayer,
+                        transportPort
+                    )
                 }
             }
-            val protocol = when(transportProtocol) {
-                TransportProtocol.HTTP -> {
-                    Http(transportPort.number, context.cacheDir)
+            getLocalIpAddress()?.let { host ->
+                when (transportProtocol) {
+                    TransportProtocol.HTTP -> {
+                        Http(host, transportPort.number, context.cacheDir)
+                    }
+                    TransportProtocol.HTTP_HOSTING -> {
+                        HttpHost(host, transportPort.number, context.filesDir)
+                    }
+                    else -> {
+                        throw NotImplementedError()
+                    }
                 }
-                TransportProtocol.HTTP_HOSTING -> {
-                    HttpHost(transportPort.number, context.filesDir)
+            }?.let { protocol ->
+                return Server(serviceDiscovery, protocol, protocolEventListener)
+            } ?: throw IllegalStateException("Network connection required.")
+        }
+
+        companion object {
+            fun getLocalIpAddress(): String? {
+                try {
+                    val enumNetworkInterfaces = NetworkInterface.getNetworkInterfaces()
+                    while (enumNetworkInterfaces.hasMoreElements()) {
+                        val networkInterface = enumNetworkInterfaces.nextElement()
+                        val enumInetAddress = networkInterface.inetAddresses
+                        while (enumInetAddress.hasMoreElements()) {
+                            val inetAddress = enumInetAddress.nextElement()
+                            if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
+                                return inetAddress.hostAddress
+                            }
+                        }
+                    }
+                } catch (e: SocketException) {
+                    e.printStackTrace()
                 }
-                else -> {
-                    throw NotImplementedError()
-                }
+                return null
             }
-            return Server(serviceDiscovery, protocol, protocolEventListener)
         }
     }
 
@@ -79,10 +110,10 @@ class Server(
 
     data class TransportPort(val number: Int) {
         companion object {
-            val AUTO = fromAvailablePort()
+            val AUTO = 0
             fun custom(number: Int) = TransportPort(number)
             private fun fromAvailablePort(): TransportPort {
-                val port = ServerSocket(0).also{
+                val port = ServerSocket(0).also {
                     it.close()
                 }.localPort
                 return TransportPort(port)

@@ -8,13 +8,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import com.journeyapps.barcodescanner.BarcodeEncoder
@@ -25,9 +33,6 @@ import tokyo.isseikuzumaki.devicediscoverydemo.ui.theme.DeviceDiscoveryDemoTheme
 import tokyo.isseikuzumaki.devicediscoverylib.server.ProtocolEventListener
 import tokyo.isseikuzumaki.devicediscoverylib.server.Server
 import java.io.File
-import java.net.Inet4Address
-import java.net.NetworkInterface
-import java.net.SocketException
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -36,6 +41,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var server: Server
+    val qrBitmap: MutableState<ImageBitmap?> = mutableStateOf(null)
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,34 +81,27 @@ class MainActivity : ComponentActivity() {
                     }
                     return "OK"
                 }
+
+                override fun onProtocolEstablished(uri: Uri) {
+                    MultiFormatWriter()
+                        .encode(uri.toString(), BarcodeFormat.QR_CODE, 256, 256)
+                        .let { BarcodeEncoder().createBitmap(it) }
+                        .let { qrBitmap.value = it.asImageBitmap() }
+                }
             }
         }.build(this@MainActivity)
 
-
-        val bitmap = getLocalIpAddress()?.let {
-            "http://$it:$PORT"
-        }?.let {
-            MultiFormatWriter().encode(it, BarcodeFormat.QR_CODE, 256, 256)
-        }?.let {
-            BarcodeEncoder().createBitmap(it)
-        }
-
-
         setContent {
             DeviceDiscoveryDemoTheme {
-                Column(
+                Surface(
                     modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colors.background
                 ) {
-                    Row {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
                         AppName(name = getString(R.string.app_name))
-                    }
-                    Row {
-                        bitmap?.let {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Ipaddress"
-                            )
-                        }
+                        QR_ControlPanel(qrState = qrBitmap)
                     }
                 }
             }
@@ -122,7 +121,19 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppName(name: String) {
-    Text(text = name)
+    Text(text = name, fontSize = 20.sp)
+    Spacer(modifier = Modifier.width(width = 60.dp))
+}
+
+@Composable
+fun QR_ControlPanel(qrState: MutableState<ImageBitmap?>) {
+    Text(text = "Read QR code to access control panel")
+    qrState.value?.let {
+        Image(
+            bitmap = it,
+            contentDescription = "Ipaddress"
+        )
+    }
 }
 
 @Preview(showBackground = true)
@@ -131,23 +142,4 @@ fun DefaultPreview() {
     DeviceDiscoveryDemoTheme {
         AppName("AppName")
     }
-}
-
-fun getLocalIpAddress(): String? {
-    try {
-        val enumNetworkInterfaces = NetworkInterface.getNetworkInterfaces()
-        while (enumNetworkInterfaces.hasMoreElements()) {
-            val networkInterface = enumNetworkInterfaces.nextElement()
-            val enumInetAddress = networkInterface.inetAddresses
-            while (enumInetAddress.hasMoreElements()) {
-                val inetAddress = enumInetAddress.nextElement()
-                if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
-                    return inetAddress.hostAddress
-                }
-            }
-        }
-    } catch (e: SocketException) {
-        e.printStackTrace()
-    }
-    return null
 }
